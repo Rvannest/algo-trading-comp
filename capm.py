@@ -46,8 +46,10 @@ def get_news(session):
     news = session.get('http://localhost:9999/v1/news')    
     if news.ok:
         newsbook = news.json()
+        #print(newsbook)
         for i in range(len(newsbook[-1]['body'])):
             if newsbook[-1]['body'][i] == '%':
+                #parses the risk free rate. stored in Rf
                 CAPM_vals['%Rf'] = round(float(newsbook[-1]['body'][i - 4:i])/100, 4)               
         latest_news = newsbook[0]
         if len(newsbook) > 1:
@@ -69,10 +71,10 @@ def pop_prices(session):
 #Buy or Sell function, put in your own parameters
 def buy_or_sell(session, expected_return):
     for i in expected_return.keys():
-        if expected_return[i] > 'ENTER YOUR PARAMETER':
-            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'ENTER ORDER TYPE', 'quantity': 'ENTER DESIRED QUANTITY', 'action': 'BUY/SELL'})
-        elif expected_return[i] < 'ENTER YOUR PARAMETER':
-            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'ENTER ORDER TYPE', 'quantity': 'ENTER DESIRED QUANTITY', 'action': 'BUY/SELL'})
+        if float(expected_return[i]) > 0.01:
+            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'MARKET', 'quantity': 1000, 'action': 'BUY'})
+        elif float(expected_return[i]) < -0.01:
+            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'MARKET', 'quantity': 1000, 'action': 'SELL'})
 
 def main():
     with requests.Session() as session:
@@ -140,6 +142,7 @@ def main():
             CAPM_vals['Beta - GAMMA'] = beta_gamma
             CAPM_vals['Beta - THETA'] = beta_theta
             
+            #Calculating capm values
             if CAPM_vals['%RM'] != '':
                 er_alpha = CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
                 er_gamma = CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
@@ -154,7 +157,7 @@ def main():
             expected_return['THETA'] = er_theta
             
             #Uncomment this string to enable Buy/Sell
-            #buy_or_sell(session, expected_return)
+            buy_or_sell(session, expected_return)
             
             #print statement (print, expected_return function, any of the tickers, or CAPM_vals dictionary)
             print(expected_return)
