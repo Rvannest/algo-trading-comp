@@ -102,6 +102,7 @@ def main():
         while tick > 0 and tick < 295 and not shutdown:
             for sym in ['HAWK', 'DOVE']:
                 volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = open_sells(s, sym)
+                #return volume_filled, open_sells_volume, ids, prices, order_volumes
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = open_buys(s, sym)
                 bid_price, ask_price = ticker_bid_ask(s, sym)
 
