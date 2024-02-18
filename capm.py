@@ -64,35 +64,36 @@ def get_news(session):
         return CAPM_vals
     raise ApiException('timeout')
 
-#gets all the price data for all securities and store prices in a list
-def pop_prices_and_store_in_list(session):
-    price_act = session.get('http://localhost:9999/v1/securities')
-    if price_act.ok:
-        current_prices = price_act.json()
-        # Iterate over the securities and add their prices to the historical prices list
-        for security in current_prices:
-            ticker = security['ticker']
-            price = security['last']  # Assuming 'last' is the key for the last price in the response
+# #gets all the price data for all securities and store prices in a list
+# def pop_prices_and_store_in_list(session):
+#     price_act = session.get('http://localhost:9999/v1/securities')
+#     if price_act.ok:
+#         current_prices = price_act.json()
+#         # Iterate over the securities and add their prices to the historical prices list
+#         for security in current_prices:
+#             ticker = security['ticker']
+#             price = security['last']  # Assuming 'last' is the key for the last price in the response
+#             print(f"{price}...current price")
             
-            # If the ticker is not yet in the historical_prices dictionary, add it
-            if ticker not in historical_prices:
-                historical_prices[ticker] = []
+#             # If the ticker is not yet in the historical_prices dictionary, add it
+#             if ticker not in historical_prices:
+#                 historical_prices[ticker] = []
             
-            # Append the current price to the list for this ticker
-            historical_prices[ticker].append(price)
+#             # Append the current price to the list for this ticker
+#             historical_prices[ticker].append(price)
         
-        return historical_prices
-    else:
-        raise ApiException('fail - cant get securities')
+#         return historical_prices
+#     else:
+#         raise ApiException('fail - cant get securities')
 
 
 #OG one
-# def pop_prices(session):
-#     price_act = session.get('http://localhost:9999/v1/securities')
-#     if price_act.ok:
-#         prices = price_act.json()
-#         return prices
-#     raise ApiException('fail - cant get securities')
+def pop_prices(session):
+    price_act = session.get('http://localhost:9999/v1/securities')
+    if price_act.ok:
+        prices = price_act.json()
+        return prices
+    raise ApiException('fail - cant get securities')
       
 # def pop_prices(session):
 #     price_act = session.get('http://localhost:9999/v1/securities')
@@ -104,15 +105,15 @@ def pop_prices_and_store_in_list(session):
 #     else:
 #         raise ApiException('fail - cant get securities')
 
-# #from splitting pop prices
-# def get_prices(session):
-#     price_act = session.get('http://localhost:9999/v1/securities')
-#     if price_act.ok:
-#         securities = price_act.json()
-#         prices = {security['ticker']: security['last'] for security in securities}
-#         return prices
-#     else:
-#         raise ApiException('fail - cant get securities')
+#from splitting pop prices
+def get_prices(session):
+    price_act = session.get('http://localhost:9999/v1/securities')
+    if price_act.ok:
+        securities = price_act.json()
+        prices = {security['ticker']: security['last'] for security in securities}
+        return prices
+    else:
+        raise ApiException('fail - cant get securities')
 
 #from splitting pop prices
 def get_positions(session):
@@ -126,44 +127,83 @@ def get_positions(session):
 
 
 
-def generate_shock_within_one_std(ticker):
-    # Check if there are enough prices to calculate a standard deviation
-    if ticker in historical_prices and len(historical_prices[ticker]) > 1:
-        # Calculate the standard deviation of the historical prices for the ticker
-        std_dev = np.std(historical_prices[ticker], ddof=1)  # ddof=1 for sample standard deviation
+# def generate_min_max_within_one_std(ticker):
+#     if ticker in historical_prices and len(historical_prices[ticker]) > 1:
+#         # Calculate the mean and standard deviation of the historical prices for the ticker
+#         mean_price = np.mean(historical_prices[ticker])
+#         std_dev = np.std(historical_prices[ticker], ddof=1)  # ddof=1 for sample standard deviation
         
-        # Generate a shock within one standard deviation
-        shock = np.random.normal(0, std_dev)
-    else:
-        # Default to a small shock if not enough data is available
-        shock = np.random.normal(0, 0.1)
+#         # Calculate the min and max within one standard deviation
+#         min_within_std = mean_price - std_dev
+#         max_within_std = mean_price + std_dev
+#     else:
+#         # Default to some predefined min and max if not enough data is available
+#         # This could be adjusted based on your requirements
+#         min_within_std = -0.1  # Example default value
+#         max_within_std = 0.1   # Example default value
     
-    return shock
+#     return min_within_std, max_within_std
 
     
-#def buy_or_sell(session, expected_return):
-def buy_or_sell(session, adjusted_return):
+def buy_or_sell(session, expected_return):
+#def buy_or_sell(session, adjusted_return):
     #prices = get_prices(session)  # Assuming you need current prices for some logic not shown here
     positions = get_positions(session)
-    
-    for ticker, adj_return in adjusted_return.items():
-            if float(adj_return) > 0.25 and positions[ticker] < 0:
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]*-1), 'action': 'BUY'})
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
-                print(f" {adjusted_return}, BUY... + exp return...long position...quantity to buy: {positions[ticker]*-1}...{ticker}")
+    current_prices = get_prices(session)
+    forward_price = CAPM_vals.get('forward', None)
 
-            elif float(adj_return) < -0.25 and positions[ticker] > 0:
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]), 'action': 'SELL'})
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
-                print(f" {adjusted_return}, SELL... - exp return...short position...quantity to sell: {positions[ticker]}...{ticker}")
+        # Iterate through each ticker for which we have a CAPM return
+    for ticker, capm_return in expected_return.items():
+        if ticker == "RITM":
+            current_price = current_prices.get(ticker, None)
+            forward_price = CAPM_vals.get('forward', None)  # Directly using the forward price
+
+            if current_price and forward_price:
+                # Calculate the Analyst Expected Return for RITM
+                analyst_expected_return = (forward_price - current_price) / current_price
+                print(f"Expected Analyst return: {analyst_expected_return} for {ticker}")
+            else:
+                print(f"Information missing for {ticker}")
+
+        # If the CAPM expected return is greater than the Analyst expected return, then buy
+    if capm_return > 0 and analyst_expected_return > 0:
+        session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+        print(f"Buying {ticker} based on CAPM return being greater than Analyst return.")
+
+    # elif capm_return > 0 and analyst_expected_return > 0:
+    #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': positions[ticker], 'action': 'SELL'})
+    #     print(f"Selling {ticker} based on CAPM return being less than Analyst return...closing long position")
+
+    elif capm_return < 0 and analyst_expected_return < 0:
+        session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+        print(f"Selling {ticker} based on CAPM return being less than Analyst return")
+
+    # elif capm_return < 0 and analyst_expected_return < 0:
+    #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': positions[ticker], 'action': 'BUY'})
+    #     print(f"Buying {ticker} based on CAPM return being higher than Analyst return...closing short position")
+
+
+
+    
+    # for ticker, adj_return in adjusted_return.items():
+    #         if float(adj_return) > 0.25 and positions[ticker] < 0:
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]*-1), 'action': 'BUY'})
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
+    #             print(f" {adjusted_return}, BUY... + exp return...long position...quantity to buy: {positions[ticker]*-1}...{ticker}")
+
+    #         elif float(adj_return) < -0.25 and positions[ticker] > 0:
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]), 'action': 'SELL'})
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
+    #             print(f" {adjusted_return}, SELL... - exp return...short position...quantity to sell: {positions[ticker]}...{ticker}")
             
-            elif float(adj_return) > 0.25 and positions[ticker] == 0:
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
-                print(f"{adjusted_return}, BUY...quick long...{ticker}")
+    #         elif float(adj_return) > 0.25 and positions[ticker] == 0:
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
+    #             print(f"{adjusted_return}, BUY...quick long...{ticker}")
             
-            elif float(adj_return) < -0.25 and positions[ticker] == 0:
-                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
-                print(f"{adjusted_return}, SELL...quick short...{ticker}")          
+    #         elif float(adj_return) < -0.25 and positions[ticker] == 0:
+    #             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
+    #             print(f"{adjusted_return}, SELL...quick short...{ticker}")          
+
 
         # if float(exp_return) > 0.025:
         #     # If expected return is greater than 2%, submit a buy order
@@ -327,37 +367,41 @@ def main():
             CAPM_vals['Beta - THETA'] = beta_theta
 
 
-            # adjusted capm values
-            #if CAPM_vals['%Rm'] != '':
-            shock_alpha = generate_shock_within_one_std()
-            shock_gamma = generate_shock_within_one_std()
-            shock_theta = generate_shock_within_one_std()
+            # # adjusted capm values
+            # #if CAPM_vals['%Rm'] != '':
+            # shock_alpha = generate_shock_within_one_std()
+            # shock_gamma = generate_shock_within_one_std()
+            # shock_theta = generate_shock_within_one_std()
             
-            # #Calculating capm values
-            # if CAPM_vals['%RM'] != '':
-            #     er_alpha = CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
-            #     #print(f"Expected Return: {er_alpha *100:.2f}%  Risk free rate: {CAPM_vals['%Rf'] *100:.2f}%, Beta: {CAPM_vals['Beta - ALPHA'] *100:.2f}%, M.R Premium: {CAPM_vals['%RM'] - CAPM_vals['%Rf'] *100:.2f}% ")
-            #     er_gamma = CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
-            #     er_theta = CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
-
+            #Calculating capm values
             if CAPM_vals['%RM'] != '':
-                er_alpha = (CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_alpha
-                er_gamma = (CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_gamma
-                er_theta = (CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_theta
+                er_alpha = CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+                #print(f"Expected Return: {er_alpha *100:.2f}%  Risk free rate: {CAPM_vals['%Rf'] *100:.2f}%, Beta: {CAPM_vals['Beta - ALPHA'] *100:.2f}%, M.R Premium: {CAPM_vals['%RM'] - CAPM_vals['%Rf'] *100:.2f}% ")
+                er_gamma = CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+                er_theta = CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
 
-                adjusted_returns = {'ALPHA': er_alpha, 'GAMMA': er_gamma, 'THETA': er_theta}
+            # # caculation for adjusted capm values
+            # if CAPM_vals['%RM'] != '':
+            #     er_alpha = (CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_alpha
+            #     er_gamma = (CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_gamma
+            #     er_theta = (CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_theta
+
+            #     adjusted_returns = {'ALPHA': er_alpha, 'GAMMA': er_gamma, 'THETA': er_theta}
             else:
                 er_alpha = 'Wait for market forward price'
                 er_gamma = 'Wait for market forward price'
                 er_theta = 'Wait for market forward price'
                 
-            # expected_return['ALPHA'] = er_alpha
-            # expected_return['GAMMA'] = er_gamma
-            # expected_return['THETA'] = er_theta
+            expected_return['ALPHA'] = er_alpha
+            expected_return['GAMMA'] = er_gamma
+            expected_return['THETA'] = er_theta
+            # print(f"{expected_return['ALPHA']}...expected return of Alpha")
+            # print(f"{expected_return['GAMMA']}...expected return of Gamma")
+            # print(f"{expected_return['THETA']}...expected return of Theta")
             
             #Uncomment this string to enable Buy/Sell
-            #buy_or_sell(session, expected_return)
-            buy_or_sell(session, adjusted_returns)
+            buy_or_sell(session, expected_return)
+            #buy_or_sell(session, adjusted_returns)
             
             #print statement (print, expected_return function, any of the tickers, or CAPM_vals dictionary)
             #print(expected_return)
