@@ -14,6 +14,10 @@ import requests
 from time import sleep
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+
+#to store prices
+historical_prices = {}
 
 CAPM_vals = {}
 expected_return = {}
@@ -60,96 +64,198 @@ def get_news(session):
         return CAPM_vals
     raise ApiException('timeout')
 
-#gets all the price data for all securities        
-def pop_prices(session):
+#gets all the price data for all securities and store prices in a list
+def pop_prices_and_store_in_list(session):
     price_act = session.get('http://localhost:9999/v1/securities')
     if price_act.ok:
-        securities = price_act.json()
-        # Transforming the list of securities into a more useful format
-        prices_and_positions = {security['ticker']: {'price': security['last'], 'position': security['position']} for security in securities}
-        return prices_and_positions
-    raise ApiException('fail - cant get securities')
+        current_prices = price_act.json()
+        # Iterate over the securities and add their prices to the historical prices list
+        for security in current_prices:
+            ticker = security['ticker']
+            price = security['last']  # Assuming 'last' is the key for the last price in the response
+            
+            # If the ticker is not yet in the historical_prices dictionary, add it
+            if ticker not in historical_prices:
+                historical_prices[ticker] = []
+            
+            # Append the current price to the list for this ticker
+            historical_prices[ticker].append(price)
+        
+        return historical_prices
+    else:
+        raise ApiException('fail - cant get securities')
+
+
+#OG one
+# def pop_prices(session):
+#     price_act = session.get('http://localhost:9999/v1/securities')
+#     if price_act.ok:
+#         prices = price_act.json()
+#         return prices
+#     raise ApiException('fail - cant get securities')
+      
+# def pop_prices(session):
+#     price_act = session.get('http://localhost:9999/v1/securities')
+#     if price_act.ok:
+#         securities = price_act.json()
+#         # Transforming the list of securities into a more useful format
+#         prices_and_positions = {security['ticker']: {'price': security['last'], 'position': security['position']} for security in securities}
+#         return prices_and_positions
+#     else:
+#         raise ApiException('fail - cant get securities')
+
+# #from splitting pop prices
+# def get_prices(session):
+#     price_act = session.get('http://localhost:9999/v1/securities')
+#     if price_act.ok:
+#         securities = price_act.json()
+#         prices = {security['ticker']: security['last'] for security in securities}
+#         return prices
+#     else:
+#         raise ApiException('fail - cant get securities')
+
+#from splitting pop prices
+def get_positions(session):
+    position_act = session.get('http://localhost:9999/v1/securities')
+    if position_act.ok:
+        securities = position_act.json()
+        positions = {security['ticker']: security['position'] for security in securities}
+        return positions
+    else:
+        raise ApiException('fail - cant get securities')
+
+
+
+def generate_shock_within_one_std(ticker):
+    # Check if there are enough prices to calculate a standard deviation
+    if ticker in historical_prices and len(historical_prices[ticker]) > 1:
+        # Calculate the standard deviation of the historical prices for the ticker
+        std_dev = np.std(historical_prices[ticker], ddof=1)  # ddof=1 for sample standard deviation
+        
+        # Generate a shock within one standard deviation
+        shock = np.random.normal(0, std_dev)
+    else:
+        # Default to a small shock if not enough data is available
+        shock = np.random.normal(0, 0.1)
+    
+    return shock
 
     
-#Buy or Sell function, put in your own parameters
-def buy_or_sell(session, expected_return):
-    for i in expected_return.keys():
-        if float(expected_return[i]) > 0.02:
-            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
-        elif float(expected_return[i]) < -0.02:
-            session.post('http://localhost:9999/v1/orders', params = {'ticker': i, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
-
-
-def open_sells(session, sym):
-    resp = session.get('http://localhost:9999/v1/orders?status=OPEN')
-    if resp.ok:
-        open_sells_volume = 0
-        ids = []
-        prices = []
-        order_volumes = []
-        volume_filled = []
-        open_orders = resp.json()
-        for order in open_orders:
-            if order['action'] == 'SELL' and order['ticker'] == sym:
-                volume_filled.append(order['quantity_filled'])
-                order_volumes.append(order['quantity'])
-                open_sells_volume += order['quantity']
-                prices.append(order['price'])
-                ids.append(order['order_id'])
-        return {'volume_filled': volume_filled, 'open_volume': open_sells_volume, 'ids': ids, 'prices': prices, 'order_volumes': order_volumes}
-    else:
-        raise ApiException('Failed to retrieve open sell orders.')
-
-def open_buys(session, sym):
-    resp = session.get('http://localhost:9999/v1/orders?status=OPEN')
-    if resp.ok:
-        open_buys_volume = 0
-        ids = []
-        prices = []
-        order_volumes = []
-        volume_filled = []
-        open_orders = resp.json()
-        for order in open_orders:
-            if order['action'] == 'BUY' and order['ticker'] == sym:
-                volume_filled.append(order['quantity_filled'])
-                order_volumes.append(order['quantity'])
-                open_buys_volume += order['quantity']
-                prices.append(order['price'])
-                ids.append(order['order_id'])
-        return {'volume_filled': volume_filled, 'open_volume': open_buys_volume, 'ids': ids, 'prices': prices, 'order_volumes': order_volumes}
-    else:
-        raise ApiException('Failed to retrieve open buy orders.')
-
-
-
-def check_order_performance(session, expected_return):
-    # Retrieve current positions for all tickers
-    current_positions = {security['ticker']: security['position'] for security in pop_prices(session)}
+#def buy_or_sell(session, expected_return):
+def buy_or_sell(session, adjusted_return):
+    #prices = get_prices(session)  # Assuming you need current prices for some logic not shown here
+    positions = get_positions(session)
     
-    for ticker, exp_return in expected_return.items():
-        # Assume get_current_price function exists and retrieves the latest price for the ticker
-        current_price = get_current_price(session, ticker)
+    for ticker, adj_return in adjusted_return.items():
+            if float(adj_return) > 0.25 and positions[ticker] < 0:
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]*-1), 'action': 'BUY'})
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
+                print(f" {adjusted_return}, BUY... + exp return...long position...quantity to buy: {positions[ticker]*-1}...{ticker}")
+
+            elif float(adj_return) < -0.25 and positions[ticker] > 0:
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': (positions[ticker]), 'action': 'SELL'})
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
+                print(f" {adjusted_return}, SELL... - exp return...short position...quantity to sell: {positions[ticker]}...{ticker}")
+            
+            elif float(adj_return) > 0.25 and positions[ticker] == 0:
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
+                print(f"{adjusted_return}, BUY...quick long...{ticker}")
+            
+            elif float(adj_return) < -0.25 and positions[ticker] == 0:
+                session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
+                print(f"{adjusted_return}, SELL...quick short...{ticker}")          
+
+        # if float(exp_return) > 0.025:
+        #     # If expected return is greater than 2%, submit a buy order
+        #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 1000, 'action': 'BUY'})
+        #     print(f"Buy...{ticker}...Above 0.025: {exp_return}")
         
-        # Retrieve open buy and sell orders
-        buys_info = open_buys(session, ticker)
-        sells_info = open_sells(session, ticker)
+        # elif float(exp_return) < 0 and positions[ticker] > 0:
+        #     # If expected return is greater than 1% and we hold a position, submit a sell order
+        #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': positions[ticker], 'action': 'SELL'})
+        #     print(f"Sell...{ticker}...Between 0 and 0.01: {exp_return}...Current position +: {positions[ticker]}")
         
-        # Check and potentially close open buy orders based on expected return
-        for i, buy_price in enumerate(buys_info['prices']):
-            price_diff_percentage = (current_price - buy_price) / buy_price
-            if price_diff_percentage >= exp_return:
-                # Close the position by selling
-                session.post('http://localhost:9999/v1/orders', 
-                             params={'ticker': ticker, 'type': 'MARKET', 'quantity': buys_info['order_volumes'][i], 'action': 'SELL'})
+        # elif float(exp_return) < -0.025:
+        #     # If expected return is less than -2%, submit a sell order
+        #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 1000, 'action': 'SELL'})
+        #     print(f"Buy...{ticker}...Below -0.025: {exp_return}")
         
-        # Check and potentially close open sell orders based on expected return
-        for i, sell_price in enumerate(sells_info['prices']):
-            price_diff_percentage = (sell_price - current_price) / sell_price
-            if price_diff_percentage <= exp_return:
-                # Close the position by buying, if not exceeding current positions
-                if current_positions[ticker] < 0:  # Assuming negative position indicates short selling
-                    session.post('http://localhost:9999/v1/orders', 
-                                 params={'ticker': ticker, 'type': 'MARKET', 'quantity': sells_info['order_volumes'][i], 'action': 'BUY'})
+        # elif float(exp_return) > 0 and positions[ticker] < 0:
+        #     # If expected return is greater than 1% and we hold a position, submit a sell order
+        #     session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': positions[ticker], 'action': 'BUY'})
+        #     print(f"Sell...{ticker}...Between -0.01 and 0: {exp_return}...Current position - : {positions[ticker]}")
+
+
+# def open_sells(session, sym):
+#     resp = session.get('http://localhost:9999/v1/orders?status=OPEN')
+#     if resp.ok:
+#         open_sells_volume = 0
+#         ids = []
+#         prices = []
+#         order_volumes = []
+#         volume_filled = []
+#         open_orders = resp.json()
+#         for order in open_orders:
+#             if order['action'] == 'SELL' and order['ticker'] == sym:
+#                 volume_filled.append(order['quantity_filled'])
+#                 order_volumes.append(order['quantity'])
+#                 open_sells_volume += order['quantity']
+#                 prices.append(order['price'])
+#                 ids.append(order['order_id'])
+#         return {'volume_filled': volume_filled, 'open_volume': open_sells_volume, 'ids': ids, 'prices': prices, 'order_volumes': order_volumes}
+#     else:
+#         raise ApiException('Failed to retrieve open sell orders.')
+
+# def open_buys(session, sym):
+#     resp = session.get('http://localhost:9999/v1/orders?status=OPEN')
+#     if resp.ok:
+#         open_buys_volume = 0
+#         ids = []
+#         prices = []
+#         order_volumes = []
+#         volume_filled = []
+#         open_orders = resp.json()
+#         for order in open_orders:
+#             if order['action'] == 'BUY' and order['ticker'] == sym:
+#                 volume_filled.append(order['quantity_filled'])
+#                 order_volumes.append(order['quantity'])
+#                 open_buys_volume += order['quantity']
+#                 prices.append(order['price'])
+#                 ids.append(order['order_id'])
+#         return {'volume_filled': volume_filled, 'open_volume': open_buys_volume, 'ids': ids, 'prices': prices, 'order_volumes': order_volumes}
+#     else:
+#         raise ApiException('Failed to retrieve open buy orders.')
+
+
+
+# def check_order_performance(session, expected_return):
+#     # Retrieve current positions for all tickers
+#     current_positions = {security['ticker']: security['position'] for security in pop_prices(session)}
+    
+#     for ticker, exp_return in expected_return.items():
+#         # Assume get_current_price function exists and retrieves the latest price for the ticker
+#         current_price = get_current_price(session, ticker)
+        
+#         # Retrieve open buy and sell orders
+#         buys_info = open_buys(session, ticker)
+#         sells_info = open_sells(session, ticker)
+        
+#         # Check and potentially close open buy orders based on expected return
+#         for i, buy_price in enumerate(buys_info['prices']):
+#             price_diff_percentage = (current_price - buy_price) / buy_price
+#             if price_diff_percentage >= exp_return:
+#                 # Close the position by selling
+#                 session.post('http://localhost:9999/v1/orders', 
+#                              params={'ticker': ticker, 'type': 'MARKET', 'quantity': buys_info['order_volumes'][i], 'action': 'SELL'})
+        
+#         # Check and potentially close open sell orders based on expected return
+#         for i, sell_price in enumerate(sells_info['prices']):
+#             price_diff_percentage = (sell_price - current_price) / sell_price
+#             if price_diff_percentage <= exp_return:
+#                 # Close the position by buying, if not exceeding current positions
+#                 if current_positions[ticker] < 0:  # Assuming negative position indicates short selling
+#                     session.post('http://localhost:9999/v1/orders', 
+#                                  params={'ticker': ticker, 'type': 'MARKET', 'quantity': sells_info['order_volumes'][i], 'action': 'BUY'})
 
 
 def main():
@@ -159,7 +265,8 @@ def main():
         alpha = pd.DataFrame(columns= ['ALPHA','BID', 'ASK', 'LAST', '%Ri', '%Rm'])
         gamma = pd.DataFrame(columns= ['GAMMA','BID', 'ASK', 'LAST', '%Ri', '%Rm'])
         theta = pd.DataFrame(columns= ['THETA','BID', 'ASK', 'LAST', '%Ri', '%Rm'])
-        while get_tick(session) < 600 and not shutdown:
+        
+        while get_tick(session) < 599 and not shutdown:
             #update the forward market price and rf rate
             get_news(session)
             
@@ -175,10 +282,9 @@ def main():
             #expected market return paramter
             if 'forward' in CAPM_vals.keys():
                 CAPM_vals['%RM'] = (CAPM_vals['forward']-ritm['LAST'].iloc[0])/ritm['LAST'].iloc[0]
-                print(f" Expected MARKET return: {CAPM_vals['%RM']*100:.2f}%, Forward (News): {CAPM_vals['forward']}, RITM LAST: {ritm['LAST'].iloc[0]}")
+                #print(f" Expected MARKET return: {CAPM_vals['%RM']*100:.2f}%, Forward (News): {CAPM_vals['forward']}, RITM LAST: {ritm['LAST'].iloc[0]}")
             else:
                 CAPM_vals['%RM'] = ''
-                
                 
               
             ##update ALPHA bid-ask dataframe
@@ -219,24 +325,39 @@ def main():
             CAPM_vals['Beta - ALPHA'] = beta_alpha
             CAPM_vals['Beta - GAMMA'] = beta_gamma
             CAPM_vals['Beta - THETA'] = beta_theta
+
+
+            # adjusted capm values
+            #if CAPM_vals['%Rm'] != '':
+            shock_alpha = generate_shock_within_one_std()
+            shock_gamma = generate_shock_within_one_std()
+            shock_theta = generate_shock_within_one_std()
             
-            #Calculating capm values
+            # #Calculating capm values
+            # if CAPM_vals['%RM'] != '':
+            #     er_alpha = CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+            #     #print(f"Expected Return: {er_alpha *100:.2f}%  Risk free rate: {CAPM_vals['%Rf'] *100:.2f}%, Beta: {CAPM_vals['Beta - ALPHA'] *100:.2f}%, M.R Premium: {CAPM_vals['%RM'] - CAPM_vals['%Rf'] *100:.2f}% ")
+            #     er_gamma = CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+            #     er_theta = CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+
             if CAPM_vals['%RM'] != '':
-                er_alpha = CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
-                print(f"Expected Return: {er_alpha *100:.2f}%  Risk free rate: {CAPM_vals['%Rf'] *100:.2f}%, Beta: {CAPM_vals['Beta - ALPHA'] *100:.2f}%, M.R Premium: {CAPM_vals['%RM'] - CAPM_vals['%Rf'] *100:.2f}% ")
-                er_gamma = CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
-                er_theta = CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])
+                er_alpha = (CAPM_vals['%Rf'] + CAPM_vals['Beta - ALPHA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_alpha
+                er_gamma = (CAPM_vals['%Rf'] + CAPM_vals['Beta - GAMMA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_gamma
+                er_theta = (CAPM_vals['%Rf'] + CAPM_vals['Beta - THETA'] * (CAPM_vals['%RM'] - CAPM_vals['%Rf'])) + shock_theta
+
+                adjusted_returns = {'ALPHA': er_alpha, 'GAMMA': er_gamma, 'THETA': er_theta}
             else:
                 er_alpha = 'Wait for market forward price'
                 er_gamma = 'Wait for market forward price'
                 er_theta = 'Wait for market forward price'
                 
-            expected_return['ALPHA'] = er_alpha
-            expected_return['GAMMA'] = er_gamma
-            expected_return['THETA'] = er_theta
+            # expected_return['ALPHA'] = er_alpha
+            # expected_return['GAMMA'] = er_gamma
+            # expected_return['THETA'] = er_theta
             
             #Uncomment this string to enable Buy/Sell
-            buy_or_sell(session, expected_return)
+            #buy_or_sell(session, expected_return)
+            buy_or_sell(session, adjusted_returns)
             
             #print statement (print, expected_return function, any of the tickers, or CAPM_vals dictionary)
             #print(expected_return)
