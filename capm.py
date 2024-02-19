@@ -21,6 +21,10 @@ historical_prices = {}
 
 CAPM_vals = {}
 expected_return = {}
+
+#to filter and store the beta values
+beta_vals = {k: v for k, v in CAPM_vals.items() if 'Beta - ' in k}
+
 # class that passes error message, ends the program
 class ApiException(Exception):
     pass
@@ -122,7 +126,7 @@ def modified_get_news(session):
 #         raise ApiException('fail - cant get securities')
 
 
-#OG one
+#OG one, Used in the dataframes
 def pop_prices(session):
     price_act = session.get('http://localhost:9999/v1/securities')
     if price_act.ok:
@@ -140,7 +144,9 @@ def pop_prices(session):
 #     else:
 #         raise ApiException('fail - cant get securities')
 
-# #from splitting pop prices
+
+
+# # #from splitting pop prices
 # def get_prices(session):
 #     price_act = session.get('http://localhost:9999/v1/securities')
 #     if price_act.ok:
@@ -150,13 +156,24 @@ def pop_prices(session):
 #     else:
 #         raise ApiException('fail - cant get securities')
 
-#from splitting pop prices
-def get_positions(session):
-    position_act = session.get('http://localhost:9999/v1/securities')
-    if position_act.ok:
-        securities = position_act.json()
+# #from splitting pop prices
+# def get_positions(session):
+#     position_act = session.get('http://localhost:9999/v1/securities')
+#     if position_act.ok:
+#         securities = position_act.json()
+#         positions = {security['ticker']: security['position'] for security in securities}
+#         return positions
+#     else:
+#         raise ApiException('fail - cant get securities')
+
+#combining get positions and get positions
+def new_get_positions_and_prices(session):
+    response = session.get('http://localhost:9999/v1/securities')
+    if response.ok:
+        securities = response.json()
         positions = {security['ticker']: security['position'] for security in securities}
-        return positions
+        last_ticker_prices = {security['ticker']: security['last'] for security in securities}
+        return positions, last_ticker_prices  # Return both positions and prices as a tuple
     else:
         raise ApiException('fail - cant get securities')
 
@@ -176,33 +193,42 @@ def get_positions(session):
     
 #     return shock
 
-def close_position(session):
-    
-    positions = get_positions(session)
 
-    for ticker in positions:
+def close_position(session):
+    positions, last_ticker_prices = new_get_positions_and_prices(session)
+
+    for ticker, position in positions.items():
         if int(positions[ticker]) > 0:
-            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
+            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+            # could do this too according to gpt: 'quantity': abs(int(position))
             print(f"selling to close")
         if int(positions[ticker]) < 0:
-            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
+            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
             print(f"buying to close")
 
 
     
-def buy_or_sell(session, expected_return):
+def buy_or_sell(session, highest_beta_ticker, highest_beta_value, last_price_for_RITM, forecasted_price_for_RITM):
 #def buy_or_sell(session, adjusted_return):
     #prices = get_prices(session)  # Assuming you need current prices for some logic not shown here
-    positions = get_positions(session)
-    modified_news_data = modified_get_news(session)
+    positions, last_ticker_prices = new_get_positions_and_prices(session)
+    #modified_news_data = modified_get_news(session)
+    percentage_diff = ((int(forecasted_price_for_RITM) - int(last_price_for_RITM)) / int(last_price_for_RITM)) * 100
+    print(f"forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...percentage diff: {percentage_diff}")
+    print(f"highest beta ticker: {highest_beta_ticker}...highest beta value: {highest_beta_value}")
 
-    for ticker, exp_return in expected_return.items():
-        if float(exp_return) > 0:
-            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'BUY'})
-            print(f"buy to open")
-        elif float(exp_return) < 0:
-            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 10000, 'action': 'SELL'})
-            print(f"sell to open")
+    if percentage_diff > 0.30 and highest_beta_value > 0.50:
+        session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+        print(f"buy to open")
+        print(f"bought...{highest_beta_ticker}")
+        print(f"percentage diff positive: {percentage_diff}")
+    elif percentage_diff < -0.30 and highest_beta_value > 0.50:
+        session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+        print(f"sell to open")
+        print(f"sold...{highest_beta_ticker}")
+        print(f"percentage diff negative: {percentage_diff}")
+
+
     
     #expected is 3%, stock goes up 3% close the position. or recalculate when there is new
     # input: tick number, need the tick from when the headline was announced, get the tick from the analyst price prediction. can only place trade between the headline tick and the analyst tick
@@ -338,8 +364,25 @@ def main():
         while get_tick(session) < 599 and not shutdown:
             #update the forward market price and rf rate
             #get_news(session)
-            modified_news_data = modified_get_news(session)
-            positions = get_positions(session)
+            #modified_news_data = modified_get_news(session)
+            positions, last_ticker_prices = new_get_positions_and_prices(session)
+
+            forward_number_found = False
+            while not forward_number_found:
+                try:
+                    # Attempt to fetch or update data before accessing 'forward'
+                    # Assuming modified_get_news(session) updates CAPM_vals
+                    modified_get_news(session)  # Fetch/update the data
+                    
+                    # Now attempt to use the 'forward' key
+                    forecasted_price_for_RITM = CAPM_vals['forward']
+                    #print(f"forecasted price for RITM: {forecasted_price_for_RITM}")
+                    forward_number_found = True  # Exit loop if successful
+                except KeyError:
+                    # 'forward' number not available, wait and try again
+                    print("'forward' number not available yet, retrying...")
+                    sleep(0.01)  # Wait for some time before retrying
+
 
             #print(f"AAAAAAAAAA{modified_get_news(session)} ... {get_tick(session)}")
             #print(f"Tick from most recent article: {CAPM_vals['latest_news_tick']}...Current forecast: {CAPM_vals['forward']}...Forecasted Tick: {modified_news_data['tick_from_body']}")
@@ -438,23 +481,53 @@ def main():
             expected_return['THETA'] = er_theta
             
             
-            
+
+
+            beta_values = {
+                'ALPHA': beta_alpha,
+                'GAMMA': beta_gamma,
+                'THETA': beta_theta
+            }
+
+            highest_beta_ticker = max(beta_values, key=beta_values.get)
+            #print(f"highest_beta_ticker: {highest_beta_ticker}")
+
+            highest_beta_value = beta_values[highest_beta_ticker]
+            #print(f"highest_beta_value: {highest_beta_value}")
+
+            last_price_for_RITM = last_ticker_prices.get('RITM')
+            #print(f"last price for RITM: {last_price_for_RITM}")
+
+            forecasted_price_for_RITM = CAPM_vals['forward']
+            #print(f"forecasted price for ritm: {forecasted_price_for_RITM}")
             
             #Uncomment this string to enable Buy/Sell
 
-            if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 2):
-                print(f" latest news tick: {CAPM_vals['latest_news_tick'] + 2}")
-                buy_or_sell(session, expected_return)
+            if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 3):
+                #print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
+                buy_or_sell(session, highest_beta_ticker, highest_beta_value, last_price_for_RITM, forecasted_price_for_RITM)
 
-            if int(get_tick(session)) >= int(modified_news_data['tick_from_body'] - 1):
-                print(f"Forecast tick minus 1: {modified_news_data['tick_from_body'] - 1}")
+            if  int(get_tick(session)) >=  int(CAPM_vals['tick_from_body'] - 1):
+                #print(f"Tick range to close: {(CAPM_vals['latest_news_tick'] - 2)}...{(CAPM_vals['latest_news_tick'] + 1)}")
                 close_position(session)
+
+
+            # if int(CAPM_vals['latest_news_tick'] + 2) < int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 4):
+            #     print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
+            #     buy_or_sell(session, expected_return)
+
+            # if  int(CAPM_vals['latest_news_tick'] - 2) <= int(get_tick(session)) <= int(CAPM_vals['latest_news_tick'] + 1):
+            #     print(f"Tick range to close: {(CAPM_vals['latest_news_tick'] - 2)}...{(CAPM_vals['latest_news_tick'] + 1)}")
+            #     close_position(session)
             
             
             #buy_or_sell(session, adjusted_returns)
             
             #print statement (print, expected_return function, any of the tickers, or CAPM_vals dictionary)
-            print(expected_return)
+            # for i in range(0,2):
+            #     if i == 1:     
+            #         print(expected_return)
+            #         #sleep(0.5)
             
         
 if __name__ == '__main__':
