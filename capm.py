@@ -208,25 +208,39 @@ def close_position(session):
 
 
     
-def buy_or_sell(session, highest_beta_ticker, highest_beta_value, last_price_for_RITM, forecasted_price_for_RITM):
+def buy_or_sell(session, expected_return, last_price_for_RITM, forecasted_price_for_RITM):
 #def buy_or_sell(session, adjusted_return):
     #prices = get_prices(session)  # Assuming you need current prices for some logic not shown here
     positions, last_ticker_prices = new_get_positions_and_prices(session)
     #modified_news_data = modified_get_news(session)
-    percentage_diff = ((int(forecasted_price_for_RITM) - int(last_price_for_RITM)) / int(last_price_for_RITM)) * 100
-    print(f"forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...percentage diff: {percentage_diff}")
-    print(f"highest beta ticker: {highest_beta_ticker}...highest beta value: {highest_beta_value}")
+    percentage_diff = ((float(forecasted_price_for_RITM) - float(last_price_for_RITM)) /float(last_price_for_RITM)) * 100
 
-    if percentage_diff > 0.30 and highest_beta_value > 0.50:
-        session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
-        print(f"buy to open")
-        print(f"bought...{highest_beta_ticker}")
-        print(f"percentage diff positive: {percentage_diff}")
-    elif percentage_diff < -0.30 and highest_beta_value > 0.50:
-        session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
-        print(f"sell to open")
-        print(f"sold...{highest_beta_ticker}")
-        print(f"percentage diff negative: {percentage_diff}")
+    for ticker, exp_return in expected_return.items():
+        if float(exp_return)*100 > float(percentage_diff) and float(percentage_diff) > 0.25:
+            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+            print(f"buy to open")
+            print(f"bought...{ticker}")
+            print(f"exp return: {exp_return*100} > percent diff: {percentage_diff}")
+        elif float(exp_return)*100 < float(percentage_diff) and float(percentage_diff) < -0.25:
+            session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+            print(f"sell to open")
+            print(f"sold...{ticker}")
+            print(f"exp return: {exp_return*100} < percent diff: {percentage_diff}")
+
+    print(f"forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...percentage diff: {percentage_diff}...{get_tick(session)}")
+
+
+
+    # if percentage_diff > 0.30 and highest_beta_value > 0.50:
+    #     session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+    #     print(f"buy to open")
+    #     print(f"bought...{highest_beta_ticker}")
+    #     print(f"percentage diff positive: {percentage_diff}")
+    # elif percentage_diff < -0.30 and highest_beta_value > 0.50:
+    #     session.post('http://localhost:9999/v1/orders', params={'ticker': highest_beta_ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+    #     print(f"sell to open")
+    #     print(f"sold...{highest_beta_ticker}")
+    #     print(f"percentage diff negative: {percentage_diff}")
 
 
     
@@ -503,13 +517,24 @@ def main():
             
             #Uncomment this string to enable Buy/Sell
 
+
             if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 3):
-                #print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
-                buy_or_sell(session, highest_beta_ticker, highest_beta_value, last_price_for_RITM, forecasted_price_for_RITM)
+            #print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
+                buy_or_sell(session, expected_return, last_price_for_RITM, forecasted_price_for_RITM)
 
             if  int(get_tick(session)) >=  int(CAPM_vals['tick_from_body'] - 1):
                 #print(f"Tick range to close: {(CAPM_vals['latest_news_tick'] - 2)}...{(CAPM_vals['latest_news_tick'] + 1)}")
                 close_position(session)
+
+
+
+            # if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 3):
+            #     #print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
+            #     buy_or_sell(session, highest_beta_ticker, highest_beta_value, last_price_for_RITM, forecasted_price_for_RITM)
+
+            # if  int(get_tick(session)) >=  int(CAPM_vals['tick_from_body'] - 1):
+            #     #print(f"Tick range to close: {(CAPM_vals['latest_news_tick'] - 2)}...{(CAPM_vals['latest_news_tick'] + 1)}")
+            #     close_position(session)
 
 
             # if int(CAPM_vals['latest_news_tick'] + 2) < int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 4):
@@ -527,7 +552,7 @@ def main():
             # for i in range(0,2):
             #     if i == 1:     
             #         print(expected_return)
-            #         #sleep(0.5)
+            #         sleep(0.5)
             
         
 if __name__ == '__main__':
