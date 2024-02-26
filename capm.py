@@ -69,15 +69,25 @@ def get_news(session):
 
 
 
-#MODIFIED get news
+#modified get news with a change that will fix the program from crashing when the risk free rate is 0%
 def modified_get_news(session):
     news = session.get('http://localhost:9999/v1/news')    
     if news.ok:
         newsbook = news.json()
         for i in range(len(newsbook[-1]['body'])):
             if newsbook[-1]['body'][i] == '%':
-                #parses the risk free rate. stored in Rf
-                CAPM_vals['%Rf'] = round(float(newsbook[-1]['body'][i - 4:i])/100, 4)
+                # Attempt to find and parse the risk-free rate more robustly
+                try:
+                    # Search backwards from the '%' symbol for the start of the number
+                    start = i
+                    while newsbook[-1]['body'][start - 1].isdigit() or newsbook[-1]['body'][start - 1] in '.-':
+                        start -= 1
+                    # Parse the risk-free rate
+                    CAPM_vals['%Rf'] = round(float(newsbook[-1]['body'][start:i])/100, 4)
+                except ValueError:
+                    # Handle cases where conversion to float fails
+                    print(f"Error parsing risk-free rate from text: {newsbook[-1]['body'][start:i]}")
+                break  # Assuming only one risk-free rate per news item
         
         latest_news = newsbook[0]
         CAPM_vals['latest_news_tick'] = latest_news['tick']
@@ -102,7 +112,45 @@ def modified_get_news(session):
                 print("Error converting tick number to int")
 
         return CAPM_vals
-    raise ApiException('timeout')
+    else:
+        raise ApiException('timeout')
+
+
+
+# #MODIFIED get news
+# def modified_get_news(session):
+#     news = session.get('http://localhost:9999/v1/news')    
+#     if news.ok:
+#         newsbook = news.json()
+#         for i in range(len(newsbook[-1]['body'])):
+#             if newsbook[-1]['body'][i] == '%':
+#                 #parses the risk free rate. stored in Rf
+#                 CAPM_vals['%Rf'] = round(float(newsbook[-1]['body'][i - 4:i])/100, 4)
+        
+#         latest_news = newsbook[0]
+#         CAPM_vals['latest_news_tick'] = latest_news['tick']
+
+#         if len(newsbook) > 1:
+#             for j in range(len(latest_news['body']) - 1, 1, -1):    
+#                 while latest_news['body'][j] != '$':
+#                     j -= 1
+#             CAPM_vals['forward'] = float(latest_news['body'][j + 1:-1])
+        
+#         # Additional step to extract 'at tick' value
+#         tick_phrase = 'at tick'
+#         if tick_phrase in latest_news['body']:
+#             start_index = latest_news['body'].find(tick_phrase) + len(tick_phrase)
+#             end_index = latest_news['body'].find(',', start_index)  # Assuming the tick number is followed by a comma
+#             tick_str = latest_news['body'][start_index:end_index].strip()
+#             try:
+#                 # Extract and store the tick number
+#                 CAPM_vals['tick_from_body'] = int(tick_str)
+#             except ValueError:
+#                 # Handle cases where conversion to int fails
+#                 print("Error converting tick number to int")
+
+#         return CAPM_vals
+#     raise ApiException('timeout')
 
 # #gets all the price data for all securities and store prices in a list
 # def pop_prices_and_store_in_list(session):
@@ -208,26 +256,76 @@ def close_position(session):
 
 
     
-def buy_or_sell(session, expected_return, last_price_for_RITM, forecasted_price_for_RITM):
+def buy_or_sell(session, expected_return, risk_free_rate, expected_market_return):
 #def buy_or_sell(session, adjusted_return):
     #prices = get_prices(session)  # Assuming you need current prices for some logic not shown here
     positions, last_ticker_prices = new_get_positions_and_prices(session)
     #modified_news_data = modified_get_news(session)
-    percentage_diff = ((float(forecasted_price_for_RITM) - float(last_price_for_RITM)) /float(last_price_for_RITM)) * 100
+    #percentage_diff = ((float(forecasted_price_for_RITM) - float(last_price_for_RITM)) /float(last_price_for_RITM)) * 100
+
 
     for ticker, exp_return in expected_return.items():
-        if float(exp_return)*100 > float(percentage_diff) and float(percentage_diff) > 0.25:
+        if float(exp_return)*100 > float(expected_market_return)*100+0.1 and float(expected_market_return)*100 > 0.1 and float(exp_return)*100 > float(risk_free_rate)*100+0.1:
             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
             print(f"buy to open")
             print(f"bought...{ticker}")
-            print(f"exp return: {exp_return*100} > percent diff: {percentage_diff}")
-        elif float(exp_return)*100 < float(percentage_diff) and float(percentage_diff) < -0.25:
+            #print(f"exp return: {exp_return*100} > percent diff: {percentage_diff+0.1} and > {risk_free_rate*100+0.1}")
+
+        # if float(exp_return)*100 < float(percentage_diff) and 
+
+        elif float(exp_return)*100 < float(expected_market_return)*100-0.1 and float(expected_market_return)*100 < -0.1 and float(exp_return)*100 < float(risk_free_rate)*100-0.1:
             session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
             print(f"sell to open")
             print(f"sold...{ticker}")
-            print(f"exp return: {exp_return*100} < percent diff: {percentage_diff}")
+            #print(f"exp return: {exp_return*100} < percent diff: {percentage_diff-0.1} and < {risk_free_rate*100-0.1}")
 
-    print(f"forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...percentage diff: {percentage_diff}...{get_tick(session)}")
+    print(f"exp return: {exp_return*100}...percent diff: {expected_market_return*100}...risk free: {risk_free_rate*100}...{get_tick(session)}")
+
+
+
+
+
+
+
+
+
+    # for ticker, exp_return in expected_return.items():
+    #     if float(exp_return)*100 > float(percentage_diff)+0.1 and float(percentage_diff) > 0 and float(exp_return)*100 > float(risk_free_rate)*100 + 0.1:
+    #         session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+    #         print(f"buy to open")
+    #         print(f"bought...{ticker}")
+    #         print(f"exp return: {exp_return*100} > percent diff: {percentage_diff+0.1} and > {risk_free_rate*100+0.1}")
+
+    #     # if float(exp_return)*100 < float(percentage_diff) and 
+
+    #     elif float(exp_return)*100 < float(percentage_diff)-0.1 and float(percentage_diff) < 0 and float(exp_return)*100 < float(risk_free_rate)*100  - 0.1:
+    #         session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+    #         print(f"sell to open")
+    #         print(f"sold...{ticker}")
+    #         print(f"exp return: {exp_return*100} < percent diff: {percentage_diff-0.1} and < {risk_free_rate*100-0.1}")
+
+    # print(f"exp return: {exp_return*100}...percent diff: {percentage_diff}...risk free: {risk_free_rate*100}...forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...{get_tick(session)}")
+
+
+
+
+
+
+
+
+    # for ticker, exp_return in expected_return.items():
+    #     if float(exp_return)*100 > float(percentage_diff) and float(percentage_diff) > 0.25:
+    #         session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'BUY'})
+    #         print(f"buy to open")
+    #         print(f"bought...{ticker}")
+    #         print(f"exp return: {exp_return*100} > percent diff: {percentage_diff}")
+    #     elif float(exp_return)*100 < float(percentage_diff) and float(percentage_diff) < -0.25:
+    #         session.post('http://localhost:9999/v1/orders', params={'ticker': ticker, 'type': 'MARKET', 'quantity': 5000, 'action': 'SELL'})
+    #         print(f"sell to open")
+    #         print(f"sold...{ticker}")
+    #         print(f"exp return: {exp_return*100} < percent diff: {percentage_diff}")
+
+    # print(f"forecasted price RITM: {forecasted_price_for_RITM}...last price RITM: {last_price_for_RITM}...percentage diff: {percentage_diff}...{get_tick(session)}")
 
 
 
@@ -417,7 +515,7 @@ def main():
             #expected market return paramter
             if 'forward' in CAPM_vals.keys():
                 CAPM_vals['%RM'] = (CAPM_vals['forward']-ritm['LAST'].iloc[0])/ritm['LAST'].iloc[0]
-                #print(f" Expected MARKET return: {CAPM_vals['%RM']*100:.2f}%, Forward (News): {CAPM_vals['forward']}, RITM LAST: {ritm['LAST'].iloc[0]}")
+                print(f" Expected MARKET return: {CAPM_vals['%RM']*100:.2f}%, Forward (News): {CAPM_vals['forward']}, RITM LAST: {ritm['LAST'].iloc[0]}")
             else:
                 CAPM_vals['%RM'] = ''
                 
@@ -507,24 +605,30 @@ def main():
             #print(f"highest_beta_ticker: {highest_beta_ticker}")
 
             highest_beta_value = beta_values[highest_beta_ticker]
-            #print(f"highest_beta_value: {highest_beta_value}")
+            #print(f"highest_beta_value: {highest_beta_value}...{highest_beta_ticker}")
 
-            last_price_for_RITM = last_ticker_prices.get('RITM')
+            last_price_for_RITM = ritm['LAST'].iloc[0]
             #print(f"last price for RITM: {last_price_for_RITM}")
 
             forecasted_price_for_RITM = CAPM_vals['forward']
             #print(f"forecasted price for ritm: {forecasted_price_for_RITM}")
+
+            risk_free_rate = CAPM_vals['%Rf']
+            print(f"risk free rate: {risk_free_rate}")
+
+            expected_market_return = CAPM_vals['%RM']
+            print(f"expected market return: {expected_market_return}")
             
             #Uncomment this string to enable Buy/Sell
 
 
-            if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 3):
+            #if int(get_tick(session)) < int(CAPM_vals['latest_news_tick'] + 2):
             #print(f"Tick Range to open position: {(CAPM_vals['latest_news_tick'] + 2)}...{CAPM_vals['latest_news_tick'] + 4}")
-                buy_or_sell(session, expected_return, last_price_for_RITM, forecasted_price_for_RITM)
+            buy_or_sell(session, expected_return, risk_free_rate, expected_market_return)
 
-            if  int(get_tick(session)) >=  int(CAPM_vals['tick_from_body'] - 1):
+            #if int(get_tick(session)) >=  int(CAPM_vals['tick_from_body'] - 1) or int(last_price_for_RITM) == int(forecasted_price_for_RITM):
                 #print(f"Tick range to close: {(CAPM_vals['latest_news_tick'] - 2)}...{(CAPM_vals['latest_news_tick'] + 1)}")
-                close_position(session)
+            #close_position(session)
 
 
 

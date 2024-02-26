@@ -16,11 +16,11 @@ shutdown = False
 
 
 SPEEDBUMP = 0.01
-MAX_VOLUME = {'HAWK': 1000, 'DOVE': 1000}
+MAX_VOLUME = {'HAWK': 2000, 'DOVE': 2000}
 
-MAX_ORDERS = 2
+MAX_ORDERS = 5
 
-SPREAD = .04
+SPREAD = .02
 
 def get_tick(session):
     resp = session.get('http://localhost:9999/v1/case')
@@ -75,8 +75,8 @@ def open_buys(session, sym):
 
 def buy_sell(session, sell_price, buy_price, sym):
     for i in range (MAX_ORDERS):
-        session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': MAX_VOLUME[sym], 'price': sell_price, 'action': 'SELL'})
         session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': MAX_VOLUME[sym], 'price': buy_price, 'action': 'BUY'})
+        session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': MAX_VOLUME[sym], 'price': sell_price, 'action': 'SELL'})
 
 def re_order(session, number_of_orders, ids, volumes_filled, volumes, price, action, sym):
     for i in range(number_of_orders):
@@ -99,7 +99,7 @@ def main():
         s.headers.update(API_KEY)
         tick = get_tick(s)
 
-        while tick > 0 and tick < 295 and not shutdown:
+        while tick > 0 and tick < 299 and not shutdown:
             for sym in ['HAWK', 'DOVE']:
                 volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = open_sells(s, sym)
                 #return volume_filled, open_sells_volume, ids, prices, order_volumes
@@ -136,12 +136,12 @@ def main():
                             continue
                     
                         elif(tick - single_side_transaction_time[sym] >= 1):
-                            next_buy_price = bid_price + .01
+                            next_buy_price = bid_price + .02
                             potential_profit = sell_price - next_buy_price - .02
-                            if(potential_profit >= .01 or tick - single_side_transaction_time[sym] >= 1):
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 1):
                                 action = 'BUY'
                                 number_of_orders = len(buy_ids)
-                                buy_price = bid_price + .01
+                                buy_price = bid_price + .02
                                 price = buy_price
                                 ids = buy_ids
                                 volumes = buy_volumes
@@ -154,13 +154,13 @@ def main():
                             continue # next iteration of 100p
 
                         elif(tick - single_side_transaction_time[sym] >= 1):
-                            next_sell_price = ask_price - .01
+                            next_sell_price = ask_price - .02
                             potential_profit = next_sell_price - buy_price - .02
-                            if(potential_profit >= .01 or tick - single_side_transaction_time[sym] >= 1):
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 1):
 
                                 action = 'SELL'
                                 number_of_orders = len(sell_ids)
-                                sell_price = ask_price - .01
+                                sell_price = ask_price - .02
                                 price = sell_price
                                 ids = sell_ids
                                 volumes = sell_volumes

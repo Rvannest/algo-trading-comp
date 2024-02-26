@@ -15,12 +15,12 @@ API_KEY = {'X-API-Key': 'K4P0T6H7'}
 shutdown = False
 
 
-SPEEDBUMP = 0.1
-MAX_VOLUME = {'HAWK': 10000, 'DOVE': 10000, 'RIT_C': 10000, 'RITC_U': 10000}
+SPEEDBUMP = 0.01
+MAX_VOLUME = {'HAWK': 1000, 'DOVE': 1000}
 
 MAX_ORDERS = 5
 
-SPREAD = .08
+SPREAD = .04
 
 
 # Fetches the current tick (or time) of the case.
@@ -107,16 +107,16 @@ def re_order(session, number_of_orders, ids, volumes_filled, volumes, price, act
 
 # the algorithm enters a loop where it checks for opportunities to place new orders or adjust existing ones based on the market conditions and its own order status.
 def main():
-    single_side_transaction_time = {'HAWK': 0, 'DOVE': 0, 'RIT_C': 0}
+    single_side_transaction_time = {'HAWK': 0, 'DOVE': 0}
     # dictionary that tracks whether a single side of MM transaction has been filled for each symbol
-    single_side_filled = {'HAWK': False, 'DOVE': False, 'RIT_C': False}
+    single_side_filled = {'HAWK': False, 'DOVE': False}
 
     with requests.Session() as s:
         s.headers.update(API_KEY)
         tick = get_tick(s)
 
         while tick > 0 and tick < 295 and not shutdown:
-            for sym in ['HAWK', 'DOVE', 'RIT_C']:
+            for sym in ['HAWK', 'DOVE']:
                 # see respective functions to understand the functionality
                 volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = open_sells(s, sym)
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = open_buys(s, sym)
