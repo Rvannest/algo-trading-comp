@@ -215,7 +215,7 @@ def pop_prices(session):
 #     else:
 #         raise ApiException('fail - cant get securities')
 
-#combining get positions and get positions
+#combining get positions and get prices
 def new_get_positions_and_prices(session):
     response = session.get('http://localhost:9999/v1/securities')
     if response.ok:
