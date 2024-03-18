@@ -97,6 +97,8 @@ class MarketMaker:
         self.MAX_VOLUME = {'HAWK': 2000, 'DOVE': 2000}
         self.MAX_ORDERS = 5
         self.SPREAD = 0.04
+        self.single_side_filled = {'HAWK': False, 'DOVE': False}
+        self.single_side_transaction_time = {'HAWK': 0, 'DOVE': 0}
         self.market_data = MarketData(self.session)
         self.order_management = OrderManagement(self.session, self.market_data)
         self.shutdown = False
@@ -108,21 +110,20 @@ class MarketMaker:
         # orchestrates the trading process, utilizing the functionalities provided by MarketData and OrderManagement to implement the trading logic.
         tick = self.market_data.get_tick()
 
-        while tick > 0 and tick < 299 and not shutdown:
+        while tick > 0 and tick < 299 and not self.shutdown:
             for sym in ['HAWK', 'DOVE']:
-                volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = open_sells(s, sym)
-                #return volume_filled, open_sells_volume, ids, prices, order_volumes
-                volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = open_buys(s, sym)
-                bid_price, ask_price = ticker_bid_ask(s, sym)
+                volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = self.market_data.open_sells(sym)
+                volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = self.market_data.open_buys(sym)
+                bid_price, ask_price = self.market_data.ticker_bid_ask(sym)
 
                 # Initiate a buy and sell order on each side of the order book when there are no open orders detected
                 if(open_sells_volume == 0) and (open_buys_volume == 0):
-                    single_side_filled[sym] = False
+                    self.single_side_filled[sym] = False
                     bid_ask_spread = ask_price - bid_price
                     sell_price = ask_price
                     buy_price = bid_price
-                    if(bid_ask_spread >= SPREAD):
-                        buy_sell(s, sell_price, buy_price, sym)
+                    if(bid_ask_spread >= self.SPREAD):
+                        self.order_management.buy_sell(sell_price, buy_price, sym)
                         #sleep(SPEEDBUMP)
                 
                 # else, there are open orders in the order book
@@ -137,9 +138,9 @@ class MarketMaker:
                     # Handles partial fills on one side of the order book
                     # This condition is met when one side of the order book is entirely filled
                     # Records the tick time of this occurrence
-                    if (not single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
-                        single_side_filled[sym] = True
-                        single_side_transaction_time[sym] = tick
+                    if (not self.single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
+                        self.single_side_filled[sym] = True
+                        self.single_side_transaction_time[sym] = tick
                     
                     # If there are no open sell orders, the algo checks if the current buy price is equal to the market's bid price
                     # Set the current buy price of those orders to the current bid price
@@ -149,12 +150,12 @@ class MarketMaker:
                         
                         # The current buy price is not equal to the bid price, it has been 2 ticks since 1 side of the order book was completely filled
                         # Set and update the BUY parameters, then initiate the re-order.
-                        elif(tick - single_side_transaction_time[sym] >= 2):
+                        elif(tick - self.single_side_transaction_time[sym] >= 2):
                             next_buy_price = bid_price + .02
                             potential_profit = sell_price - next_buy_price - .02
                             
                             # If potential profit is greater than 2 cents, then initiate a BUY re-order
-                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
+                            if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
                                 action = 'BUY'
                                 number_of_orders = len(buy_ids)
                                 buy_price = bid_price + .02
@@ -162,7 +163,7 @@ class MarketMaker:
                                 ids = buy_ids
                                 volumes = buy_volumes
                                 volumes_filled = volume_filled_buys
-                                re_order(s, number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                self.order_management.re_order(number_of_orders, ids, volumes_filled, volumes, price, action, sym)
                                 #sleep (SPEEDBUMP)
 
                     # If there was open sell orders, then check to see if there are no open buy orders instead
@@ -173,12 +174,12 @@ class MarketMaker:
                         
                         # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
                         # Set and update the SELL parameters, then initiate the re-order
-                        elif(tick - single_side_transaction_time[sym] >= 2):
+                        elif(tick - self.single_side_transaction_time[sym] >= 2):
                             next_sell_price = ask_price - .02
                             potential_profit = next_sell_price - buy_price - .02
                             
                             # If potential profit is greater than 2 cents, then initiate a SELL re-order
-                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
+                            if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
                                 action = 'SELL'
                                 number_of_orders = len(sell_ids)
                                 sell_price = ask_price - .02
@@ -186,9 +187,9 @@ class MarketMaker:
                                 ids = sell_ids
                                 volumes = sell_volumes
                                 volumes_filled = volume_filled_sells
-                                re_order(s, number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                self.order_management.re_order(number_of_orders, ids, volumes_filled, volumes, price, action, sym)
                                 #sleep (SPEEDBUMP)
-            tick = get_tick(s)
+            tick = self.market_data.get_tick()
 
 
 
