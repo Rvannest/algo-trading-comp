@@ -116,7 +116,7 @@ def main():
                         buy_sell(s, sell_price, buy_price, sym)
                         #sleep(SPEEDBUMP)
                 
-                # else, there are open orders on in the order book
+                # else, there are open orders in the order book
                 else:
                     # if there are open sell orders, set the price to the lowest ask price
                     if len(sell_prices) > 0:
@@ -126,20 +126,26 @@ def main():
                         buy_price = buy_prices[0]
                     
                     # Handles partial fills on one side of the order book
-                    # If the single_side_filled[sym] flag is False and either side of the order book has no orders
-                    # Set single_side_filled[sym] to True because there are open orders since we passed through the initial if statement
+                    # This condition is met when one side of the order book is entirely filled
+                    # Records the tick time of this occurrence
                     if (not single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
                         single_side_filled[sym] = True
                         single_side_transaction_time[sym] = tick
-
+                    
+                    # If there are no open sell orders, the algo checks if the current buy price is equal to the market's bid price
+                    # Set the current buy price of those orders to the current bid price
                     if (open_sells_volume == 0):
                         if (buy_price == bid_price):
                             continue
-                    
-                        elif(tick - single_side_transaction_time[sym] >= 1):
+                        
+                        # The current buy price is not equal to the bid price, it has been 2 ticks since 1 side of the order book was completely filled
+                        # Set and update the BUY parameters, then initiate the re-order.
+                        elif(tick - single_side_transaction_time[sym] >= 2):
                             next_buy_price = bid_price + .02
                             potential_profit = sell_price - next_buy_price - .02
-                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 1):
+                            
+                            # If potential profit is greater than 2 cents, then initiate a BUY re-order
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
                                 action = 'BUY'
                                 number_of_orders = len(buy_ids)
                                 buy_price = bid_price + .02
@@ -150,15 +156,20 @@ def main():
                                 re_order(s, number_of_orders, ids, volumes_filled, volumes, price, action, sym)
                                 #sleep (SPEEDBUMP)
 
+                    # If there was open sell orders, then check to see if there are no open buy orders instead
+                    # Set current sell price of those orders to the current ask price
                     elif(open_buys_volume == 0):
                         if (sell_price == ask_price):
                             continue # next iteration of 100p
-
-                        elif(tick - single_side_transaction_time[sym] >= 1):
+                        
+                        # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
+                        # Set and update the SELL parameters, then initiate the re-order
+                        elif(tick - single_side_transaction_time[sym] >= 2):
                             next_sell_price = ask_price - .02
                             potential_profit = next_sell_price - buy_price - .02
-                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 1):
-
+                            
+                            # If potential profit is greater than 2 cents, then initiate a SELL re-order
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
                                 action = 'SELL'
                                 number_of_orders = len(sell_ids)
                                 sell_price = ask_price - .02

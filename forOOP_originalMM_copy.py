@@ -94,7 +94,7 @@ class MarketMaker:
         self.session = requests.Session()
         self.session.headers.update({'X-API-Key': 'K4P0T6H7'})
         self.SPEEDBUMP = 0.01
-        self.MAX_VOLUME = {{'HAWK': 2000, 'DOVE': 2000}}
+        self.MAX_VOLUME = {'HAWK': 2000, 'DOVE': 2000}
         self.MAX_ORDERS = 5
         self.SPREAD = 0.04
         self.market_data = MarketData(self.session)
@@ -110,9 +110,85 @@ class MarketMaker:
 
         while tick > 0 and tick < 299 and not shutdown:
             for sym in ['HAWK', 'DOVE']:
-                pass
-        pass
+                volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = open_sells(s, sym)
+                #return volume_filled, open_sells_volume, ids, prices, order_volumes
+                volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = open_buys(s, sym)
+                bid_price, ask_price = ticker_bid_ask(s, sym)
 
+                # Initiate a buy and sell order on each side of the order book when there are no open orders detected
+                if(open_sells_volume == 0) and (open_buys_volume == 0):
+                    single_side_filled[sym] = False
+                    bid_ask_spread = ask_price - bid_price
+                    sell_price = ask_price
+                    buy_price = bid_price
+                    if(bid_ask_spread >= SPREAD):
+                        buy_sell(s, sell_price, buy_price, sym)
+                        #sleep(SPEEDBUMP)
+                
+                # else, there are open orders in the order book
+                else:
+                    # if there are open sell orders, set the price to the lowest ask price
+                    if len(sell_prices) > 0:
+                        sell_price = sell_prices[0]
+                    # if there are open buy orders, set the price to the highest bid price
+                    if len(buy_prices) > 0:
+                        buy_price = buy_prices[0]
+                    
+                    # Handles partial fills on one side of the order book
+                    # This condition is met when one side of the order book is entirely filled
+                    # Records the tick time of this occurrence
+                    if (not single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
+                        single_side_filled[sym] = True
+                        single_side_transaction_time[sym] = tick
+                    
+                    # If there are no open sell orders, the algo checks if the current buy price is equal to the market's bid price
+                    # Set the current buy price of those orders to the current bid price
+                    if (open_sells_volume == 0):
+                        if (buy_price == bid_price):
+                            continue
+                        
+                        # The current buy price is not equal to the bid price, it has been 2 ticks since 1 side of the order book was completely filled
+                        # Set and update the BUY parameters, then initiate the re-order.
+                        elif(tick - single_side_transaction_time[sym] >= 2):
+                            next_buy_price = bid_price + .02
+                            potential_profit = sell_price - next_buy_price - .02
+                            
+                            # If potential profit is greater than 2 cents, then initiate a BUY re-order
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
+                                action = 'BUY'
+                                number_of_orders = len(buy_ids)
+                                buy_price = bid_price + .02
+                                price = buy_price
+                                ids = buy_ids
+                                volumes = buy_volumes
+                                volumes_filled = volume_filled_buys
+                                re_order(s, number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                #sleep (SPEEDBUMP)
+
+                    # If there was open sell orders, then check to see if there are no open buy orders instead
+                    # Set current sell price of those orders to the current ask price
+                    elif(open_buys_volume == 0):
+                        if (sell_price == ask_price):
+                            continue # next iteration of 100p
+                        
+                        # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
+                        # Set and update the SELL parameters, then initiate the re-order
+                        elif(tick - single_side_transaction_time[sym] >= 2):
+                            next_sell_price = ask_price - .02
+                            potential_profit = next_sell_price - buy_price - .02
+                            
+                            # If potential profit is greater than 2 cents, then initiate a SELL re-order
+                            if(potential_profit >= .02 or tick - single_side_transaction_time[sym] >= 2):
+                                action = 'SELL'
+                                number_of_orders = len(sell_ids)
+                                sell_price = ask_price - .02
+                                price = sell_price
+                                ids = sell_ids
+                                volumes = sell_volumes
+                                volumes_filled = volume_filled_sells
+                                re_order(s, number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                #sleep (SPEEDBUMP)
+            tick = get_tick(s)
 
 
 
