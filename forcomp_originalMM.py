@@ -106,12 +106,7 @@ def main():
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = open_buys(s, sym)
                 bid_price, ask_price = ticker_bid_ask(s, sym)
 
-                # if sym == 'DOVE':
-                #     if sell_prices:
-                #         print(f"best ask: {ask_price}, {min(sell_prices)} -----")
-                #     if buy_prices:
-                #         print(f"best bid: {bid_price}, {max(buy_prices)}")
-
+                # Initiate a buy and sell order on each side of the order book when there are no open orders detected
                 if(open_sells_volume == 0) and (open_buys_volume == 0):
                     single_side_filled[sym] = False
                     bid_ask_spread = ask_price - bid_price
@@ -120,13 +115,19 @@ def main():
                     if(bid_ask_spread >= SPREAD):
                         buy_sell(s, sell_price, buy_price, sym)
                         #sleep(SPEEDBUMP)
-
+                
+                # else, there are open orders on in the order book
                 else:
+                    # if there are open sell orders, set the price to the lowest ask price
                     if len(sell_prices) > 0:
                         sell_price = sell_prices[0]
+                    # if there are open buy orders, set the price to the highest bid price
                     if len(buy_prices) > 0:
                         buy_price = buy_prices[0]
                     
+                    # Handles partial fills on one side of the order book
+                    # If the single_side_filled[sym] flag is False and either side of the order book has no orders
+                    # Set single_side_filled[sym] to True because there are open orders since we passed through the initial if statement
                     if (not single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
                         single_side_filled[sym] = True
                         single_side_transaction_time[sym] = tick

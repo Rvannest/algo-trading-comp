@@ -93,6 +93,10 @@ class MarketMaker:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({'X-API-Key': 'K4P0T6H7'})
+        self.SPEEDBUMP = 0.01
+        self.MAX_VOLUME = {{'HAWK': 2000, 'DOVE': 2000}}
+        self.MAX_ORDERS = 5
+        self.SPREAD = 0.04
         self.market_data = MarketData(self.session)
         self.order_management = OrderManagement(self.session, self.market_data)
         self.shutdown = False
@@ -102,6 +106,11 @@ class MarketMaker:
 
     def run(self):
         # orchestrates the trading process, utilizing the functionalities provided by MarketData and OrderManagement to implement the trading logic.
+        tick = self.market_data.get_tick()
+
+        while tick > 0 and tick < 299 and not shutdown:
+            for sym in ['HAWK', 'DOVE']:
+                pass
         pass
 
 
