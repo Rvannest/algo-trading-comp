@@ -6,7 +6,7 @@ import sys
 class ApiException (Exception):
     pass
 
-# this class deals with the Rotman API and the market data
+# The MarketData class deals with the Rotman API and market data retrieval
 class MarketData:
     def __init__(self, session):
         self.session = session
@@ -70,7 +70,7 @@ class MarketData:
 
 
 
-# this class is used to execute and post orders to the market
+# The OrderManagement class is used to execute and post orders to the market
 class OrderManagement:
     def __init__(self, session, max_orders = 5, max_volume = {'HAWK': 2000, 'DOVE': 2000}):
         self.session = session
@@ -130,7 +130,10 @@ class MarketMaker:
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = self.market_data.open_buys(sym)
                 bid_price, ask_price = self.market_data.ticker_bid_ask(sym)
 
-                # Initiate a buy and sell order on each side of the order book when there are no open orders detected
+
+                # This block initiates buy and sell orders on each side of the order book when no open orders exist for the given symbol.
+                # It sets the single_side_filled flag for the symbol to false which means that no side of the orde book has been completely filled yet.
+                # A buy and a sell order are placed at the current best bid and ask prices if the bid-ask spread is at least as large as the specified SPREAD, aiming to capture the spread as profit.
                 if(open_sells_volume == 0) and (open_buys_volume == 0):
                     self.single_side_filled[sym] = False
                     bid_ask_spread = ask_price - bid_price
@@ -140,53 +143,56 @@ class MarketMaker:
                         self.order_management.buy_sell(sell_price, buy_price, sym)
                         #sleep(SPEEDBUMP)
                 
-                # else, there are open orders in the order book
+
+                # else, this section adjusts the trading strategy based on the current state of open orders.
                 else:
-                    # if there are open sell orders, set the price to the lowest ask price
+                    # adjust sell price to the lowest ask price if there are open sell orders
                     if len(sell_prices) > 0:
                         sell_price = sell_prices[0]
-                    # if there are open buy orders, set the price to the highest bid price
+                    # adjsut buy price to the highest bid price if there are open buy orders
                     if len(buy_prices) > 0:
                         buy_price = buy_prices[0]
                     
-                    # Handles partial fills on one side of the order book
-                    # This condition is met when one side of the order book is entirely filled
-                    # Records the tick time of this occurrence
+
+                    # This condition check if one side of the order book has been completely filled.
+                    # 'single_side_filled' is set to True to indicate that one side is fully matched,
+                    # and 'single_side_transaction_time' records the tick at which this occurred.
                     if (not self.single_side_filled[sym] and (open_buys_volume == 0 or open_sells_volume == 0)):
                         self.single_side_filled[sym] = True
                         self.single_side_transaction_time[sym] = tick
                     
-                    # If there are no open sell orders, the algo checks if the current buy price is equal to the market's bid price
-                    # Set the current buy price of those orders to the current bid price
+
+                    # If there are no open sell orders and the buy orders are priced at the current market bid. This indicates that are buy orders are already optimally placed to be executed at the best available price.
+                    # Hence, the continue statement is executed and no further actions is needed for these orders.
                     if (open_sells_volume == 0):
                         if (buy_price == bid_price):
-                            continue # skips to the next symbol in the for loop
+                            continue # skips to the next iteration of the the for loop for the next symbol
                         
-                        # The current buy price is not equal to the bid price, it has been 2 ticks since 1 side of the order book was completely filled
-                        # Set and update the BUY parameters, then initiate the re-order.
+                        # else if The current buy price is not equal to the bid price and it has been at least 2 ticks since one side of the order book was completely filled
+                        # Adjust our buy price above the current bid price, then calculate potential profit
                         elif(tick - self.single_side_transaction_time[sym] >= 2):
                             next_buy_price = bid_price + .02
-                            potential_profit = sell_price - next_buy_price - .02
+                            potential_profit = sell_price - next_buy_price - .02    # minus .02 due to transaction fee
                             
                             # If potential profit is greater than 2 cents, then initiate a BUY re-order
-                            if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
+                            if(potential_profit >= .02):
                                 self.order_management.re_order(len(buy_ids), buy_ids, volume_filled_buys, buy_volumes, bid_price + .02, 'BUY', sym)
                                 #sleep (SPEEDBUMP)
 
-                    # If there was open sell orders, then check to see if there are no open buy orders instead
-                    # Set current sell price of those orders to the current ask price
+                    # else if there no open buy orders and the sell orders are priced at the current market ask. This indicates that the sell orders are already optimally placed to be executed at the best available price.
+                    # Hence, the continue statement is executed and no further actions is needed for these orders.
                     elif(open_buys_volume == 0):
                         if (sell_price == ask_price):
-                            continue # skips to the next symbol in the for loop
+                            continue # skips to the next iteration of the for loop for the next symbol
                         
-                        # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
-                        # Set and update the SELL parameters, then initiate the re-order
+                        # else if The current sell price is not equal to the ask price and it has been at least 2 ticks since one side of the order book was completely filled
+                        # Adjust our sell price below the current ask price, then calculate the potential profit
                         elif(tick - self.single_side_transaction_time[sym] >= 2):
                             next_sell_price = ask_price - .02
-                            potential_profit = next_sell_price - buy_price - .02
+                            potential_profit = next_sell_price - buy_price - .02    # minus .02 due to transaction fee
                             
                             # If potential profit is greater than 2 cents, then initiate a SELL re-order
-                            if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
+                            if(potential_profit >= .02):
                                 self.order_management.re_order(len(sell_ids), sell_ids, volume_filled_sells, sell_volumes, sell_price - .02, 'SELL', sym)
                                 #sleep (SPEEDBUMP)
             
@@ -194,7 +200,9 @@ class MarketMaker:
             tick = self.market_data.get_tick()
 
 
-
+# Created an instance of the MarketMaker class
+# Set up a signal handler for interruption signals
+# Start the market making process by calling the run method on the market_maker instance.
 if __name__ == '__main__':
     market_maker = MarketMaker()
     signal.signal(signal.SIGINT, market_maker.signal_handler)
