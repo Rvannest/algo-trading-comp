@@ -59,7 +59,7 @@ def open_buys(session, sym):
     resp = session.get('http://localhost:9999/v1/orders?status=OPEN')
     if resp.ok:
         open_buys_volume = 0
-        ids = []
+        ids = [] 
         prices = []
         order_volumes = []
         volume_filled = []

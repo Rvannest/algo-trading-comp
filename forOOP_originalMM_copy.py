@@ -8,7 +8,6 @@ class MarketData:
         self.session = session
 
     def get_tick(self):
-        # example
         resp = self.session.get('http://localhost:9999/v1/case')
         if resp.ok:
             case = resp.json()
@@ -26,7 +25,7 @@ class MarketData:
     def open_sells(self, sym):
         resp = self.session.get('http://localhost:9999/v1/orders?status=OPEN')
         if resp.ok:
-            open_sells_volume = 0 # total combined volume of all open sells
+            open_sells_volume = 0
             ids = []
             prices = []
             order_volumes = []
@@ -61,28 +60,26 @@ class MarketData:
 
 
 
-
+#this class is used to execute and post orders to the market
 class OrderManagement:
-    #this class can use MarketData to make decisions based on current market conditions such as fething the latest bid/ask prices to decide order placement
-    def __init__(self, session, market_data):
+    def __init__(self, session, max_orders = 5, max_volume = {'HAWK': 2000, 'DOVE': 2000}):
         self.session = session
-        self.market_data = market_data
+        self.max_orders = max_orders
+        self.max_volume = max_volume
 
     def buy_sell(self, sell_price, buy_price, sym):
-        for i in range (MAX_ORDERS):
-            self.session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': MAX_VOLUME[sym], 'price': sell_price, 'action': 'SELL'})
-            self.session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': MAX_VOLUME[sym], 'price': buy_price, 'action': 'BUY'})
+        for i in range (self.max_orders):
+            self.session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': self.max_volume[sym], 'price': sell_price, 'action': 'SELL'})
+            self.session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, 'type': 'LIMIT', 'quantity': self.max_volume[sym], 'price': buy_price, 'action': 'BUY'})
 
     def re_order(self, number_of_orders, ids, volumes_filled, volumes, price, action, sym):
         for i in range(number_of_orders):
             id = ids[i]
-            volume = volumes[i]
-            volume_filled = volumes_filled[i]
+            volume = volumes[i] - volumes_filled[i]
             
-            if (volume_filled != 0):
-                volume = MAX_VOLUME[sym] - volume_filled
-            
-            deleted = self.session.delete('http://localhost:9999/v1/orders/{}'.format(id))
+            if (volume_filled > 0):
+                deleted = self.session.delete(f'http://localhost:9999/v1/orders/{id}')
+                
             if (deleted.ok):
                 self.session.post('http://localhost:9999/v1/orders', params = {'ticker': sym, "type": 'LIMIT', 'quantity': volume, 'price': price, 'action': action})
 
@@ -94,8 +91,6 @@ class MarketMaker:
         self.session = requests.Session()
         self.session.headers.update({'X-API-Key': 'K4P0T6H7'})
         self.SPEEDBUMP = 0.01
-        self.MAX_VOLUME = {'HAWK': 2000, 'DOVE': 2000}
-        self.MAX_ORDERS = 5
         self.SPREAD = 0.04
         self.single_side_filled = {'HAWK': False, 'DOVE': False}
         self.single_side_transaction_time = {'HAWK': 0, 'DOVE': 0}
@@ -106,12 +101,13 @@ class MarketMaker:
     def signal_handler(self, signum, frame):
         self.shutdown = True
 
+    # orchestrates the trading process, utilizing the functionalities provided by MarketData and OrderManagement to implement the trading logic.
     def run(self):
-        # orchestrates the trading process, utilizing the functionalities provided by MarketData and OrderManagement to implement the trading logic.
         tick = self.market_data.get_tick()
 
         while tick > 0 and tick < 299 and not self.shutdown:
             for sym in ['HAWK', 'DOVE']:
+
                 volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = self.market_data.open_sells(sym)
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = self.market_data.open_buys(sym)
                 bid_price, ask_price = self.market_data.ticker_bid_ask(sym)
@@ -156,21 +152,14 @@ class MarketMaker:
                             
                             # If potential profit is greater than 2 cents, then initiate a BUY re-order
                             if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
-                                action = 'BUY'
-                                number_of_orders = len(buy_ids)
-                                buy_price = bid_price + .02
-                                price = buy_price
-                                ids = buy_ids
-                                volumes = buy_volumes
-                                volumes_filled = volume_filled_buys
-                                self.order_management.re_order(number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                self.order_management.re_order(len(buy_ids), buy_ids, volume_filled_buys, buy_volumes, bid_price + .02, 'BUY', sym)
                                 #sleep (SPEEDBUMP)
 
                     # If there was open sell orders, then check to see if there are no open buy orders instead
                     # Set current sell price of those orders to the current ask price
                     elif(open_buys_volume == 0):
                         if (sell_price == ask_price):
-                            continue # next iteration of 100p
+                            continue
                         
                         # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
                         # Set and update the SELL parameters, then initiate the re-order
@@ -180,14 +169,7 @@ class MarketMaker:
                             
                             # If potential profit is greater than 2 cents, then initiate a SELL re-order
                             if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
-                                action = 'SELL'
-                                number_of_orders = len(sell_ids)
-                                sell_price = ask_price - .02
-                                price = sell_price
-                                ids = sell_ids
-                                volumes = sell_volumes
-                                volumes_filled = volume_filled_sells
-                                self.order_management.re_order(number_of_orders, ids, volumes_filled, volumes, price, action, sym)
+                                self.order_management.re_order(len(sell_ids), sell_ids, volume_filled_sells, sell_volumes, sell_price - .02, 'SELL', sym)
                                 #sleep (SPEEDBUMP)
             tick = self.market_data.get_tick()
 
