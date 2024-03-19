@@ -3,10 +3,15 @@ import signal
 from time import sleep
 import sys
 
+class ApiException (Exception):
+    pass
+
+# this class deals with the Rotman API and the market data
 class MarketData:
     def __init__(self, session):
         self.session = session
 
+    #this function was given in the sample code for the rotman competition
     def get_tick(self):
         resp = self.session.get('http://localhost:9999/v1/case')
         if resp.ok:
@@ -14,6 +19,7 @@ class MarketData:
             return case['tick']
         raise ApiException('Authorization error. Please check API key.')
 
+    #this function was given in the sample code for the rotman competition
     def ticker_bid_ask(self, ticker):
         payload = {'ticker': ticker}
         resp = self.session.get('http://localhost:9999/v1/securities/book', params=payload)
@@ -22,6 +28,8 @@ class MarketData:
             return book['bids'][0]['price'], book['asks'][0]['price']
         raise ApiException('Authorization error. Please check API key.')
 
+    # this function was given in the sample code for the rotman competition
+    # in the future, this code will be modified to improve variable naming consistency and API usage optimization
     def open_sells(self, sym):
         resp = self.session.get('http://localhost:9999/v1/orders?status=OPEN')
         if resp.ok:
@@ -40,6 +48,8 @@ class MarketData:
                     ids.append(order['order_id'])
         return volume_filled, open_sells_volume, ids, prices, order_volumes
 
+    # this function was given in the sample code for the rotman competition
+    # in the future, this code will be modified to improve variable naming consistency and API usage optimization
     def open_buys(self, sym):
         resp = self.session.get('http://localhost:9999/v1/orders?status=OPEN')
         if resp.ok:
@@ -60,7 +70,7 @@ class MarketData:
 
 
 
-#this class is used to execute and post orders to the market
+# this class is used to execute and post orders to the market
 class OrderManagement:
     def __init__(self, session, max_orders = 5, max_volume = {'HAWK': 2000, 'DOVE': 2000}):
         self.session = session
@@ -85,7 +95,11 @@ class OrderManagement:
 
 
 
-
+# The MarketMaker class is the central component of the trading system.
+# It utilizes MarketData instances to access live market prices and order book details, and OrderManagement
+# instances to execute trades and manage orders efficiently. This class handles the main trading logic,
+# including order placement and re-ordering based on market conditions. Future improvements may include
+# refining variable naming for consistency and optimizing API usage for better performance.
 class MarketMaker:
     def __init__(self):
         self.session = requests.Session()
@@ -98,6 +112,7 @@ class MarketMaker:
         self.order_management = OrderManagement(self.session, self.market_data)
         self.shutdown = False
 
+    # modified for OOP and self variables, this function was given in the sample code for the rotman competition
     def signal_handler(self, signum, frame):
         self.shutdown = True
 
@@ -108,6 +123,9 @@ class MarketMaker:
         while tick > 0 and tick < 299 and not self.shutdown:
             for sym in ['HAWK', 'DOVE']:
 
+                # this was given in the sample code for the rotman competition
+                # these 3 statements include variables that store the information from the MarketData functions
+                # in the future, this code will be modified to improve variable naming consistency
                 volume_filled_sells, open_sells_volume, sell_ids, sell_prices, sell_volumes = self.market_data.open_sells(sym)
                 volume_filled_buys, open_buys_volume, buy_ids, buy_prices, buy_volumes = self.market_data.open_buys(sym)
                 bid_price, ask_price = self.market_data.ticker_bid_ask(sym)
@@ -142,7 +160,7 @@ class MarketMaker:
                     # Set the current buy price of those orders to the current bid price
                     if (open_sells_volume == 0):
                         if (buy_price == bid_price):
-                            continue
+                            continue # skips to the next symbol in the for loop
                         
                         # The current buy price is not equal to the bid price, it has been 2 ticks since 1 side of the order book was completely filled
                         # Set and update the BUY parameters, then initiate the re-order.
@@ -159,7 +177,7 @@ class MarketMaker:
                     # Set current sell price of those orders to the current ask price
                     elif(open_buys_volume == 0):
                         if (sell_price == ask_price):
-                            continue
+                            continue # skips to the next symbol in the for loop
                         
                         # The current sell price is not equal to the ask price, it has been 2 ticks since 1 side of the order book was completely filled
                         # Set and update the SELL parameters, then initiate the re-order
@@ -171,6 +189,8 @@ class MarketMaker:
                             if(potential_profit >= .02 or tick - self.single_side_transaction_time[sym] >= 2):
                                 self.order_management.re_order(len(sell_ids), sell_ids, volume_filled_sells, sell_volumes, sell_price - .02, 'SELL', sym)
                                 #sleep (SPEEDBUMP)
+            
+            #if the for loop finished normally or due to the continue statement, it will retrieve the new current tick within the while loop
             tick = self.market_data.get_tick()
 
 
